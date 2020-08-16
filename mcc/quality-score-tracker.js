@@ -80,7 +80,7 @@ function main(){
     /*
     * The base folder for all Quality Score Tracker files.
     */
-    "baseFolder" : "Intern/Google Ads Scripts",
+    "baseFolder" : "Google Ads/Quality Score Tracker",
     /*
     * Whether to add a client folder in the base folder (resulting in a folder like "Quality Score Tracker/CLIENT_NAME (123-456-7890)/")
     * The folder's name is not important, as long as the Adwords client id remains in it.
