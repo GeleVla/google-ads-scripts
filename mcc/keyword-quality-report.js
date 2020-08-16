@@ -4,12 +4,15 @@
 // Created By: Tibbe van Asten
 // for Increase B.V.
 // 
-// Last update: 29-11-2018
+// Last update: 16-8-2020
 //
 // ABOUT THE SCRIPT
 // 
 // With this script, we will create a report with all keywords
 // in your accounts that have quality issues.
+//
+// How to use it
+// - every hour
 //
 // Link: https://adsscripts.com/nl/scripts/google-ads-scripts/report-keyword-quality
 //
