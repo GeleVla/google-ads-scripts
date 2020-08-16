@@ -22,6 +22,7 @@
 * In case one account is very, very large and the script stops because of
 * one of the script limitations (eg time limit), this script will continue 
 * where it left off in the next run. 
+* Run it every day, so missing keywords will be added daily.
 *
 ********** END Description **************************************************/
 
