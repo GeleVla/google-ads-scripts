@@ -53,7 +53,7 @@
 var CONFIG = {
   // URL of the spreadsheet template.
   // This should be a copy of https://goo.gl/M4HjaH.
-  SPREADSHEET_URL: 'https://docs.google.com/spreadsheets/d/14MIB5xAtpinyHYGZ_bM7VFY-eTU80-KBgbca9EC0-wI/edit',
+  SPREADSHEET_URL: '',
 
   // Whether to output results to a copy of the above spreadsheet (true) or to
   // the spreadsheet directly, overwriting previous results (false).
