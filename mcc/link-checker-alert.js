@@ -64,12 +64,12 @@ var CONFIG = {
   ],
 
   // Label to use when a link has been checked.
-  LABEL: '',
+  LABEL: 'link_checked',
 
   // A list of ManagedAccountSelector conditions to restrict the population
   // of child accounts that will be processed. Leave blank or comment out
   // to include all child accounts.
-  ACCOUNT_CONDITIONS: [],
+  //ACCOUNT_CONDITIONS: [],
 
   // Number of milliseconds to sleep after each URL request. Use this throttle
   // to reduce the load that the script imposes on your web server(s).
