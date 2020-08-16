@@ -11,8 +11,8 @@
 // With this script, we will create a report with all keywords
 // in your accounts that have quality issues.
 //
-// How to use it
-// - every hour
+// HOW TO USE IT
+// - run this script every hour
 //
 // Link: https://adsscripts.com/nl/scripts/google-ads-scripts/report-keyword-quality
 //
