@@ -6,6 +6,7 @@
  * @instructions
  * - add email addresses and accountlabels
  * - guide: https://adsscripts.com/nl/scripts/google-ads-scripts/standaardafwijking-anomaly-checker
+ * - run it hourly
  *
  * @todo
  * - Impressions?
