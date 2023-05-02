@@ -183,10 +183,14 @@ function getKeywords() {
 }
 
 function sendEmailRecap(emailRecap) {
-  var emailAddress = config.EMAILADDRESS;
-  var accountName = AdsApp.currentAccount().getName();
-  var subject = accountName + ': Recap of Added Search Terms';
-  var message = emailRecap || 'No search terms were added.';
+  if (emailRecap) {
+    var accountName = AdsApp.currentAccount().getName();
+    var emailAddress = config.EMAILADDRESS;
+    var subject = accountName + ': Recap of Added Search Terms';
+    var message = emailRecap;
 
-  MailApp.sendEmail(emailAddress, subject, message);
+    MailApp.sendEmail(emailAddress, subject, message);
+  } else {
+    Logger.log('No search terms were added. Email not sent.');
+  }
 }
