@@ -103,6 +103,8 @@ function main() {
         adGroupRecap[adGroupName] = [];
       }
 
+      var addedMatchTypes = [];
+      
       // Iterate over match types in config.KEYWORD_MATCH_TYPES
       for (var i = 0; i < config.KEYWORD_MATCH_TYPES.length; i++) {
         var matchType = config.KEYWORD_MATCH_TYPES[i];
@@ -128,24 +130,28 @@ function main() {
         var keyword = keywordOperation.getResult();
 
         if (keyword) {
-          adGroupRecap[adGroupName].push({
-            searchTerm: queriesToBeAdded[key][0],
-            matchType: matchType
-          });
+          addedMatchTypes.push(matchType);
           Logger.log("Put " + keyword.getText() + " (" + matchType + ") in " + adGroup.getName());
         } else {
           Logger.log("Failed to add keyword: " + queriesToBeAdded[key][0] + " (" + matchType + ")");
         }
       }
+
+      if (addedMatchTypes.length > 0) {
+        adGroupRecap[adGroupName].push({
+          searchTerm: queriesToBeAdded[key][0],
+          matchTypes: addedMatchTypes
+        });
+      }
     }
-  }
+  } 
 
   // Generate email recap
   for (var adGroupName in adGroupRecap) {
     if (adGroupRecap[adGroupName].length > 0) {
       emailRecap += "Ad Group: " + adGroupName + "\n";
       adGroupRecap[adGroupName].forEach(function (keywordInfo) {
-        emailRecap += "  Added search term: " + keywordInfo.searchTerm + " (" + keywordInfo.matchType + ")\n";
+        emailRecap += "  Added search term: " + keywordInfo.searchTerm + " (" + keywordInfo.matchTypes.join(', ') + ")\n";
       });
       emailRecap += "\n";
     }
