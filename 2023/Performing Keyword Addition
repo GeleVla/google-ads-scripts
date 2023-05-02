@@ -1,3 +1,4 @@
+
 // Copyright 2023. All Rights Reserved.
 //
 // Original script by Remko van der Zwaag & rewritten by Tibbe van Asten
@@ -183,7 +184,8 @@ function getKeywords() {
 
 function sendEmailRecap(emailRecap) {
   var emailAddress = config.EMAILADDRESS;
-  var subject = 'Google Ads Script: Recap of Added Search Terms';
+  var accountName = AdsApp.currentAccount().getName();
+  var subject = accountName + ': Recap of Added Search Terms';
   var message = emailRecap || 'No search terms were added.';
 
   MailApp.sendEmail(emailAddress, subject, message);
