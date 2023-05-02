@@ -8,6 +8,7 @@
 // This script checks all search queries in your account. Based
 // on your own theresholds, these queries can be added as keywords 
 // in the same adgroup. It then sends a recap mail.
+// I prefer to run it weekly and check the mail for new keywords.
 //
 ////////////////////////////////////////////////////////////////////
 
