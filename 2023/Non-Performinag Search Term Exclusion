@@ -1,0 +1,136 @@
+
+// Copyright 2023. All Rights Reserved.
+//
+// Written by: Arjan Schoorl
+//
+// ABOUT THE SCRIPT
+// This script checks all search queries in your account. Based
+// on your own thresholds, these queries can be excluded.
+// It then sends a recap mail.
+// I prefer to run it weekly and check the mail for excluded search terms.
+//
+////////////////////////////////////////////////////////////////////
+
+var config = {
+    EMAILADDRESS: 'mail@company.com',
+
+    // The date range you want to look at, remember to add up some days if you have a longer conversionLag 
+    DATE_RANGE: 30,
+
+    // Set the following thresholds. Set to '0' (zero) to be ignored.
+    // These threshold help select the right queries to be excluded.
+    // Each query must match all thresholds!
+    IMPRESSIONS_THRESHOLD: 0,
+    CLICKS_THRESHOLD: 0,
+    CTR_THRESHOLD: 0,
+    CPA_THRESHOLD: 0,
+    COST_THRESHOLD: 0,
+
+}
+
+// Start script, don't add anything below this line
+////////////////////////////////////////////////////////////////////
+
+function main() {
+    var queriesToBeExcluded = {};
+    var emailRecap = '';
+    var campaignRecap = {};
+    var today = new Date();
+    var daysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - config.DATE_RANGE);
+    var dateFrom = Utilities.formatDate(daysAgo, AdWordsApp.currentAccount().getTimeZone(), 'yyyyMMdd');
+    var dateTo = Utilities.formatDate(today, AdWordsApp.currentAccount().getTimeZone(), 'yyyyMMdd');
+    var report = AdsApp.report(
+        "SELECT Query, KeywordTextMatchingQuery, AdGroupId, CampaignId, Impressions, Clicks, Cost, Ctr, CostPerConversion, Conversions " +
+        "FROM SEARCH_QUERY_PERFORMANCE_REPORT " +
+        "WHERE Impressions > 0 " +
+        "AND AdGroupStatus = ENABLED " +
+        "AND CampaignStatus = ENABLED " +
+        "AND KeywordTextMatchingQuery DOES_NOT_CONTAIN_IGNORE_CASE 'URL' " +
+        "DURING " + dateFrom + "," + dateTo);
+
+    var rows = report.rows();
+    while (rows.hasNext()) {
+        var row = rows.next();
+
+        // Skip queries if thresholds are set and not matched.
+        if (config.IMPRESSIONS_THRESHOLD != 0 && row["Impressions"] < config.IMPRESSIONS_THRESHOLD) continue;
+        if (config.CLICKS_THRESHOLD != 0 && row["Clicks"] < config.CLICKS_THRESHOLD) continue;
+        if (config.CTR_THRESHOLD != 0 && row["Ctr"].replace("%", "") < config.CTR_THRESHOLD) continue;
+        if (config.CPA_THRESHOLD != 0 && row["CostPerConversion"] > config.CPA_THRESHOLD) continue;
+        if (config.COST_THRESHOLD != 0 && row["Cost"] < config.COST_THRESHOLD) continue;
+
+        // Only exclude search terms with zero conversions
+        if (row["Conversions"] == 0) {
+            // If the query passes all thresholds, mark it for exclusion
+            if (queriesToBeExcluded[row["Query"]] == null) {
+                queriesToBeExcluded[row["Query"]] = { campaignId: row["CampaignId"], adGroupId: row["AdGroupId"] };
+            }
+        }
+    }
+
+    Logger.log("Found " + Object.keys(queriesToBeExcluded).length + " search terms to be excluded");
+
+    // Exclude search terms
+    for (var query in queriesToBeExcluded) {
+        var adGroupId = queriesToBeExcluded[query].adGroupId;
+        var adGroupIterator = AdsApp
+            .adGroups()
+            .withIds([adGroupId])
+            .get();
+
+        while (adGroupIterator.hasNext()) {
+            var adGroup = adGroupIterator.next();
+            var adGroupName = adGroup.getName();
+            var campaignName = adGroup.getCampaign().getName();
+
+            if (!campaignRecap[campaignName]) {
+                campaignRecap[campaignName] = {};
+            }
+
+            if (!campaignRecap[campaignName][adGroupName]) {
+                campaignRecap[campaignName][adGroupName] = [];
+            }
+
+            excludeKeywords([query], adGroup);
+            campaignRecap[campaignName][adGroupName].push(query);
+            Logger.log("Excluded search term: " + query + " in ad group: " + adGroup.getName() + " and campaign: " + campaignName);
+        }
+    }
+
+    // Generate email recap
+    for (var campaignName in campaignRecap) {
+        emailRecap += "Campaign: " + campaignName + "\n";
+        for (var adGroupName in campaignRecap[campaignName]) {
+            if (campaignRecap[campaignName][adGroupName].length > 0) {
+                emailRecap += "  Ad Group: " + adGroupName + "\n";
+                campaignRecap[campaignName][adGroupName].forEach(function (query) {
+                    emailRecap += "    Excluded search term: " + query + "\n";
+                });
+            }
+        }
+        emailRecap += "\n";
+    }
+    sendEmailRecap(emailRecap);
+}
+
+////////////////////////////////////////////////////////////////////
+
+function sendEmailRecap(emailRecap) {
+    if (emailRecap) {
+        var accountName = AdsApp.currentAccount().getName();
+        var emailAddress = config.EMAILADDRESS;
+        var subject = accountName + ': Recap of Excluded Search Terms';
+        var message = emailRecap;
+        MailApp.sendEmail(emailAddress, subject, message);
+    } else {
+        Logger.log('No search terms were excluded. Email not sent.');
+    }
+}
+
+////////////////////////////////////////////////////////////////////
+
+function excludeKeywords(queriesToBeExcluded, targetAdGroup) {
+    queriesToBeExcluded.forEach(function (query) {
+        targetAdGroup.createNegativeKeyword('[' + query + ']');
+    });
+}
