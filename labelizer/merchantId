@@ -1,0 +1,18 @@
+function main() {
+  let merchantId = 259921221; // replace with your merchant ID
+  getAllProductIds(merchantId);
+}
+
+function getAllProductIds(merchantId) {
+  let pageToken;
+  do {
+    let response = ShoppingContent.Products.list(merchantId, {pageToken: pageToken});
+    for (let i = 0; i < response.resources.length; i++) {
+      let fullId = response.resources[i].id;
+      let idParts = fullId.split(':');
+      let actualId = idParts[idParts.length - 1];
+      Logger.log('Product ID: ' + actualId);
+    }
+    pageToken = response.nextPageToken;
+  } while (pageToken);
+}
