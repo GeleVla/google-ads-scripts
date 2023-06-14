@@ -1,0 +1,295 @@
+var config = {
+
+    SPREADSHEET_URL: "https://docs.google.com/spreadsheets/d/1CjvfIIbqGM9uctBI2TOm7Q9OfwAOUv6FzJGdAzAtNU8/edit#gid=0",
+    merchantId: 261237243,
+    daysAgo: 30,
+    includePriceCompetitiveData: true,
+    productIds: ['shopify_NL_6765190512776_39933597483144', 'ID: shopify_NL_5140573454472_40973777109128', 'shopify_NL_6774357229704_40321637220488', 'shopify_NL_6764325437576_39930270318728', 'shopify_NL_6849359773832_40321499562120']
+
+}
+
+function main() {
+    let sheetToUse = SpreadsheetApp.openByUrl(config.SPREADSHEET_URL).getSheetByName('data');
+    getProductData(sheetToUse, config.merchantId, config.daysAgo, config.productIds, config.includePriceCompetitiveData)
+}
+
+function getProductData(sheetToUse, merchantId, daysAgo, productIds, includePriceCompetitiveData) {
+    var startDate = new Date;
+    startDate.setDate(startDate.getDate() - daysAgo);
+    if (productIds.length > 5) {
+        Logger.log("Max number of IDs is 5, contact jack.gossington@propeldigital.com to discuss running for more products");
+        return;
+    } else {
+        var productIDsLower = [];
+        for (var productIDIndex = 0; productIDIndex < productIds.length; productIDIndex++) {
+            productIDsLower.push(productIds[productIDIndex].toLowerCase());
+        }
+    }
+    ;
+    var performanceData = getPerformanceData(daysAgo);
+    if (includePriceCompetitiveData == true) {
+        var performanceData = priceCompData(performanceData, merchantId);
+    }
+    ;
+    var performanceData = statusData(performanceData, merchantId);
+    let dataHeaders = ["date", "id", "product", "impressions", "clicks", "cost", "conversions", "conversions_value", "price", "benchmark", "availability"];
+    let combinedData = [dataHeaders];
+    var existingSheetData = sheetToUse.getRange("A:K").getValues();
+    var currentDate = new Date;
+    var accountTimeZone = AdsApp.currentAccount().getTimeZone();
+    var formattedCurrentDate = Utilities.formatDate(currentDate, accountTimeZone, "yyyy-MM-dd");
+    if (existingSheetData[1][0] == "") {
+        var earliestDate = "first";
+    } else {
+        var earliestDate = new Date;
+    }
+    ;
+    for (var sheetDataRow = 1; sheetDataRow < existingSheetData.length; sheetDataRow++) {
+        if (existingSheetData[sheetDataRow][0] == "") {
+            break;
+        }
+        ;
+        var existingDate = new Date(existingSheetData[sheetDataRow][0]);
+        existingDate.setDate(existingDate.getDate() + 1);
+        if (existingDate < earliestDate) {
+            var earliestDate = existingDate;
+        }
+        ;
+        if (String(existingDate.getMonth() + 1).length < 2) {
+            var formattedMonth = "0" + String(existingDate.getMonth() + 1);
+        } else {
+            var formattedMonth = String(existingDate.getMonth() + 1);
+        }
+        ;
+        if (String(existingDate.getDate()).length < 2) {
+            var formattedDay = "0" + String(existingDate.getDate());
+        } else {
+            var formattedDay = String(existingDate.getDate());
+        }
+        ;
+        var formattedExistingDate = existingDate.getFullYear() + "-" + formattedMonth + "-" + formattedDay;
+        if (formattedExistingDate != formattedCurrentDate) {
+            if (existingSheetData[sheetDataRow][3] == "") {
+                combinedData.push(existingSheetData[sheetDataRow]);
+            }
+        }
+        ;
+        if (existingDate < startDate) {
+            if (existingSheetData[sheetDataRow][9] == "") {
+                combinedData.push(existingSheetData[sheetDataRow]);
+            }
+        }
+    }
+    ;
+    for (const [key, value] of Object.entries(performanceData)) {
+        var keySplit = key.split("@--@");
+        var productTitle = keySplit[0];
+        var productItemID = keySplit[2];
+        if (productIDsLower.indexOf(productItemID) != -1) {
+            var segmentDate = keySplit[1];
+            if ("price" in performanceData[key]) {
+                combinedData.push([segmentDate, productItemID, productTitle, performanceData[key].impressions, performanceData[key].clicks, performanceData[key].cost, performanceData[key].conversions, performanceData[key].conversions_value, performanceData[key].price, performanceData[key].benchmark, performanceData[key].availability]);
+            } else {
+                if ("availability" in performanceData[key]) {
+                    combinedData.push([segmentDate, productItemID, productTitle, performanceData[key].impressions, performanceData[key].clicks, performanceData[key].cost, performanceData[key].conversions, performanceData[key].conversions_value, "", "", performanceData[key].availability]);
+                } else {
+                    combinedData.push([segmentDate, productItemID, productTitle, performanceData[key].impressions, performanceData[key].clicks, performanceData[key].cost, performanceData[key].conversions, performanceData[key].conversions_value, "", "", ""]);
+                }
+            }
+        }
+    }
+    ;
+    var filteredData = [dataHeaders];
+    if (earliestDate != "first") {
+        earliestDate.setDate(earliestDate.getDate() - 1);
+    }
+    ;
+    for (var combinedDataIndex = 1; combinedDataIndex < combinedData.length; combinedDataIndex++) {
+        var combinedDataRow = combinedData[combinedDataIndex];
+        if (typeof combinedDataRow[0] === "string" || combinedDataRow[0] instanceof String) {
+            var dateParts = combinedDataRow[0].split("-");
+            var previousDate = new Date(dateParts[0], parseInt(parseFloat(dateParts[1]) - 1), dateParts[2]);
+            previousDate.setDate(previousDate.getDate() - 1);
+            previousDate.setHours(16, 0, 0);
+        } else {
+            previousDate = combinedDataRow[0];
+        }
+        ;
+        if (earliestDate == "first") {
+            if (combinedDataRow[10] != "") {
+                filteredData.push(combinedDataRow);
+            }
+        } else {
+            if (previousDate >= earliestDate) {
+                filteredData.push(combinedDataRow);
+            }
+        }
+    }
+    ;
+    var dedupedData = dedupeData(filteredData);
+    sheetToUse.getRange("A1:K").clearContent();
+    sheetToUse.getRange("A1:K" + dedupedData.length.toString()).setValues(dedupedData);
+    sheetToUse.getRange("A2:K" + dedupedData.length.toString()).sort(10);
+}
+
+function getPerformanceData(lookBackPeriod) {
+    var performanceStartDate = new Date;
+    performanceStartDate.setDate(performanceStartDate.getDate() - lookBackPeriod);
+    if (String(performanceStartDate.getMonth() + 1).length < 2) {
+        var formattedPerformanceStartMonth = "0" + String(performanceStartDate.getMonth() + 1);
+    } else {
+        var formattedPerformanceStartMonth = String(performanceStartDate.getMonth() + 1);
+    }
+    ;
+    if (String(performanceStartDate.getDate()).length < 2) {
+        var formattedPerformanceStartDay = "0" + String(performanceStartDate.getDate());
+    } else {
+        var formattedPerformanceStartDay = String(performanceStartDate.getDate());
+    }
+    ;
+    var formattedPerformanceStartDate = performanceStartDate.getFullYear() + "-" + formattedPerformanceStartMonth + "-" + formattedPerformanceStartDay;
+    var performanceEndDate = new Date;
+    performanceEndDate.setDate(performanceEndDate.getDate() - 1);
+    if (String(performanceEndDate.getMonth() + 1).length < 2) {
+        var formattedPerformanceStartMonth = "0" + String(performanceEndDate.getMonth() + 1);
+    } else {
+        var formattedPerformanceStartMonth = String(performanceEndDate.getMonth() + 1);
+    }
+    ;
+    if (String(performanceEndDate.getDate()).length < 2) {
+        var formattedPerformanceStartDay = "0" + String(performanceEndDate.getDate());
+    } else {
+        var formattedPerformanceStartDay = String(performanceEndDate.getDate());
+    }
+    ;
+    var formattedPerformanceEndDate = performanceEndDate.getFullYear() + "-" + formattedPerformanceStartMonth + "-" + formattedPerformanceStartDay;
+    var chalet = "SELECT  segments.date, campaign.name,  segments.product_title,  segments.product_item_id, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value  FROM shopping_performance_view   WHERE segments.date BETWEEN '" + formattedPerformanceStartDate + "' AND '" + formattedPerformanceEndDate + "' ORDER BY campaign.name";
+    let performanceDataObj = {};
+    var report = AdsApp.report(chalet);
+    var rowsIterator = report.rows();
+    while (rowsIterator.hasNext()) {
+        var row = rowsIterator.next();
+        var compositeKey = row["segments.product_title"] + "@--@" + row["segments.date"] + "@--@" + row["segments.product_item_id"].toLowerCase();
+        if (compositeKey in performanceDataObj) {
+            if ("impressions" in performanceDataObj[compositeKey]) {
+                performanceDataObj[compositeKey].impressions = parseFloat(performanceDataObj[compositeKey].impressions) + parseFloat(row["metrics.impressions"]);
+                performanceDataObj[compositeKey].clicks = parseFloat(performanceDataObj[compositeKey].clicks) + parseFloat(row["metrics.clicks"]);
+                performanceDataObj[compositeKey].cost = parseFloat(performanceDataObj[compositeKey].cost) + parseFloat(row["metrics.cost_micros"]) * 0.000001;
+                performanceDataObj[compositeKey].conversions = parseFloat(performanceDataObj[compositeKey].conversions) + parseFloat(row["metrics.conversions"]);
+                performanceDataObj[compositeKey].conversions_value = parseFloat(performanceDataObj[compositeKey].conversions_value) + parseFloat(row["metrics.conversions_value"]);
+            } else {
+                performanceDataObj[compositeKey].impressions = parseFloat(row["metrics.impressions"]);
+                performanceDataObj[compositeKey].clicks = parseFloat(row["metrics.clicks"]);
+                performanceDataObj[compositeKey].cost = parseFloat(row["metrics.cost_micros"]) * 0.000001;
+                performanceDataObj[compositeKey].conversions = parseFloat(performanceDataObj[compositeKey].conversions) + parseFloat(row["metrics.conversions"]);
+                performanceDataObj[compositeKey].conversions_value = parseFloat(row["metrics.conversions_value"]);
+            }
+        } else {
+            performanceDataObj[compositeKey] = {};
+            performanceDataObj[compositeKey].impressions = parseFloat(row["metrics.impressions"]);
+            performanceDataObj[compositeKey].clicks = parseFloat(row["metrics.clicks"]);
+            performanceDataObj[compositeKey].cost = parseFloat(row["metrics.cost_micros"]) * 0.000001;
+            performanceDataObj[compositeKey].conversions = parseFloat(row["metrics.conversions"]);
+            performanceDataObj[compositeKey].conversions_value = parseFloat(row["metrics.conversions_value"]);
+        }
+    }
+    ;
+    return performanceDataObj;
+}
+
+function priceCompData(outputDictionary, merchantId) {
+    var xavior = ["SELECT product_view.id, product_view.title, product_view.brand,product_view.price_micros, product_view.currency_code,price_competitiveness.country_code,price_competitiveness.benchmark_price_micros,price_competitiveness.benchmark_price_currency_code FROM PriceCompetitivenessProductView", "search", "Reports", "length", "results", "getFullYear", "-", "getMonth", "getDate", "title", "productView", "@--@", ":", "split", "toLowerCase", "id", "price", "priceMicros", "benchmark", "benchmarkPriceMicros", "priceCompetitiveness", "nextPageToken"];
+    var returnDict = outputDictionary;
+    var pageToken;
+    var keepLooping = true;
+    while (keepLooping) {
+        var maxResults = 1e3;
+        var queryString = "SELECT product_view.id, product_view.title, product_view.brand,product_view.price_micros, product_view.currency_code,price_competitiveness.country_code,price_competitiveness.benchmark_price_micros,price_competitiveness.benchmark_price_currency_code FROM PriceCompetitivenessProductView";
+        var resource = { query: queryString, pageSize: maxResults, pageToken: pageToken };
+        var productStatuses = ShoppingContent.Reports.search(resource, merchantId);
+        for (var i = 1; i < productStatuses.results.length; i++) {
+            var productMC = productStatuses.results[i];
+            var currentdate = new Date;
+            var currentdateFormat = currentdate.getFullYear() + "-" + (currentdate.getMonth() + 1) + "-" + currentdate.getDate();
+            var key = productMC.productView.title + "@--@" + currentdateFormat + "@--@" + productMC.productView.id.toLowerCase().split(":")[productMC.productView.id.toLowerCase().split(":").length - 1];
+            if (key in returnDict) {
+                returnDict[key].price = productMC.productView.priceMicros * 0.000001;
+                returnDict[key].benchmark = productMC.priceCompetitiveness.benchmarkPriceMicros * 0.000001;
+            } else {
+                returnDict[key] = {};
+                returnDict[key].price = productMC.productView.priceMicros * 0.000001;
+                returnDict[key].benchmark = productMC.priceCompetitiveness.benchmarkPriceMicros * 0.000001;
+            }
+        }
+        ;
+        if (productStatuses.nextPageToken == null) {
+            keepLooping = false;
+        } else {
+            pageToken = productStatuses.nextPageToken;
+        }
+    }
+    ;
+    return returnDict;
+}
+
+function statusData(outputDictionary, merchantId) {
+    var returnDict = outputDictionary
+    var pageToken;
+    var keepLooping = true
+    while (keepLooping) {
+        var maxResults = 1000;
+        var queryString = 'SELECT product_view.id, product_view.title, product_view.availability FROM ProductView'
+        var resource = {
+            "query": queryString,
+            "pageSize": maxResults,
+            "pageToken": pageToken
+        }
+        var productStatuses = ShoppingContent.Reports.search(resource, merchantId)
+        for (var i = 1; i < productStatuses['results'].length; i++) {
+            var productMC = productStatuses['results'][i]
+            var currentdate = new Date();
+            var currentdateFormat = currentdate.getFullYear() + "-" + (currentdate.getMonth() + 1) + "-" + currentdate.getDate()
+            var key = productMC['productView']['title'] + '@--@' + currentdateFormat + '@--@' + productMC['productView']['id'].toLowerCase().split(":")[productMC['productView']['id'].toLowerCase().split(":").length - 1]
+            if (key in returnDict) {
+                if (productMC['productView']['availability'] == 'IN_STOCK') {
+                    returnDict[key]['availability'] = 1
+                } else {
+                    returnDict[key]['availability'] = 0
+                }
+            } else {
+                returnDict[key] = {}
+                if (productMC['productView']['availability'] == 'IN_STOCK') {
+                    returnDict[key]['availability'] = 1
+                } else {
+                    returnDict[key]['availability'] = 0
+                }
+            }
+        }
+        if (productStatuses['nextPageToken'] == null) {
+            keepLooping = false
+        } else {
+            pageToken = productStatuses['nextPageToken']
+        }
+    }
+    return returnDict
+}
+
+function dedupeData(data) {
+    var uniques = [];
+    var itemsFound = {};
+    for (var i = 0; i < data.length; i++) {
+        var key = ""
+        for (var j = 0; j < data[i].length; j++) {
+            key = key + data[i][j]
+        }
+        if (!(key in itemsFound)) {
+            itemsFound[key] = "Yes"
+            uniques.push(data[i])
+        }
+    }
+    return uniques
+}
+
+function onlyUnique(value, index, array) {
+    return array.indexOf(value) === index;
+}
