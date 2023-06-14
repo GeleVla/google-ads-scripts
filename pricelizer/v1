@@ -1,21 +1,66 @@
+// Copyright 2023. All Rights Reserved.
+// Flowboost Price Benchmark Labelizer
+// custom requests? arjan@floboost.nl
+//
+// V1 - Initial release
+//
+// -- Make sure you register at https://library.florisdeschrijver.com for other free scripts, automation tips, how-to and much more (to come)
+// -- Updates will be uploaded in the library first
+//
+// -- Newsletters to check > 
+// ---- PPCMastery the PPC Edge newsletter > https://www.ppcmastery.com/blog/ 
+//
+// -- Inspired by Jack Gossington
+// ---- Give him a follow https://www.linkedin.com/in/jack-gossington-3b6725166/
+//
+// ABOUT THE SCRIPT
+// This script classifies products into 5 categories: over-index, index, near-index, no-index, and under-index. 
+// It is designed to be run daily and helps monitor product performance over time for better campaign optimization.
+// Do not forget to upload the sheet as additional feed in your merchant center and enable weekly schedule
+//
+// Step-by-step instructions:
+// -- install script:             https://rebrand.ly/labelizer_script
+// -- add as supplemental feed:   https://rebrand.ly/labelizer_feed
+//
+////////////////////////////////////////////////////////////////////
+
 var config = {
-    SPREADSHEET_URL: "https://docs.google.com/spreadsheets/d/1CjvfIIbqGM9uctBI2TOm7Q9OfwAOUv6FzJGdAzAtNU8/edit#gid=0",
+    // Spreadheet link with product IDs
+    SPREADSHEET_URL: "https://docs.google.com/spreadsheets/d/1I2IiELdjxHaH6103W7ME4bB6V-sf86U-OMi9yw_xjiU/edit#gid=0",
+    
+    // Replace with your merchant ID, enable Shopping Content API
     merchantId: 261237243,
-    daysAgo: 30,
-    includePriceCompetitiveData: true,
+
+    // Date settings
+    daysAgo: 30, // the date range you want to look at, it does take the conversion lag into account
+    conversionLag: "1", // amount of days you like to subtract from the today date, it’s the days between a click happens and a sale
 }
+
+// Start script, don't add anything below this line
+////////////////////////////////////////////////////////////////////
 
 function main() {
-    let sheetToUse = SpreadsheetApp.openByUrl(config.SPREADSHEET_URL).getSheetByName('data');
-    var allProductIds = getProductIds(config.merchantId);
-    getProductData(sheetToUse, config.merchantId, config.daysAgo, allProductIds, config.includePriceCompetitiveData)
+
+    var productIds = getProductIds();
+    var benchmarkData = getBenchmarkPrices(productIds);
+    pushToSpreadsheetMerchant(benchmarkData);
+
+    var products = getFilteredShoppingProducts(config.daysAgo);
+    products.sort(function (a, b) {
+        return a[0] > b[0];
+    });
+    products = products.slice(0, 999999);
+    pushToSpreadsheet(products);
+
+    initializeOverTimeSheet();
+    updateSheetWithDailyData(products);
 }
 
-function getProductIds(merchantId) {
+function getProductIds() {
     let productIds = [];
     let pageToken;
     do {
-        let response = ShoppingContent.Products.list(merchantId, { pageToken: pageToken });
+        let response = ShoppingContent.Products.list(config.merchantId, { pageToken: pageToken });
         for (let i = 0; i < response.resources.length; i++) {
             let fullId = response.resources[i].id;
             let idParts = fullId.split(':');
@@ -27,275 +72,240 @@ function getProductIds(merchantId) {
     return productIds;
 }
 
-function getProductData(sheetToUse, merchantId, daysAgo, productIds, includePriceCompetitiveData) {
-    var startDate = new Date;
-    startDate.setDate(startDate.getDate() - daysAgo);
-
-    var productIDsLower = [];
-    for (var productIDIndex = 0; productIDIndex < productIds.length; productIDIndex++) {
-        productIDsLower.push(productIds[productIDIndex].toLowerCase());
-    }
-
-    var performanceData = getPerformanceData(daysAgo);
-    if (includePriceCompetitiveData == true) {
-        var performanceData = priceCompData(performanceData, merchantId);
-    }
-
-    var performanceData = statusData(performanceData, merchantId);
-    let dataHeaders = ["date", "id", "product", "impressions", "clicks", "cost", "conversions", "conversions_value", "price", "benchmark", "availability"];
-    let combinedData = [dataHeaders];
-    var existingSheetData = sheetToUse.getRange("A:K").getValues();
-    var currentDate = new Date;
-    var accountTimeZone = AdsApp.currentAccount().getTimeZone();
-    var formattedCurrentDate = Utilities.formatDate(currentDate, accountTimeZone, "yyyy-MM-dd");
-    if (existingSheetData[1][0] == "") {
-        var earliestDate = "first";
-    } else {
-        var earliestDate = new Date;
-    }
-
-    for (var sheetDataRow = 1; sheetDataRow < existingSheetData.length; sheetDataRow++) {
-        if (existingSheetData[sheetDataRow][0] == "") {
-            break;
-        }
-
-        var existingDate = new Date(existingSheetData[sheetDataRow][0]);
-        existingDate.setDate(existingDate.getDate() + 1);
-        if (existingDate < earliestDate) {
-            var earliestDate = existingDate;
-        }
-
-        if (String(existingDate.getMonth() + 1).length < 2) {
-            var formattedMonth = "0" + String(existingDate.getMonth() + 1);
-        } else {
-            var formattedMonth = String(existingDate.getMonth() + 1);
-        }
-
-        if (String(existingDate.getDate()).length < 2) {
-            var formattedDay = "0" + String(existingDate.getDate());
-        } else {
-            var formattedDay = String(existingDate.getDate());
-        }
-
-        var formattedExistingDate = existingDate.getFullYear() + "-" + formattedMonth + "-" + formattedDay;
-        if (formattedExistingDate != formattedCurrentDate) {
-            if (existingSheetData[sheetDataRow][3] == "") {
-                combinedData.push(existingSheetData[sheetDataRow]);
-            }
-        }
-
-        if (existingDate < startDate) {
-            if (existingSheetData[sheetDataRow][9] == "") {
-                combinedData.push(existingSheetData[sheetDataRow]);
-            }
-        }
-    }
-
-    for (const [key, value] of Object.entries(performanceData)) {
-        var keySplit = key.split("@--@");
-        var productTitle = keySplit[0];
-        var productItemID = keySplit[2];
-        if (productIDsLower.indexOf(productItemID) != -1) {
-            var segmentDate = keySplit[1];
-            if ("price" in performanceData[key]) {
-                combinedData.push([segmentDate, productItemID, productTitle, performanceData[key].impressions, performanceData[key].clicks, performanceData[key].cost, performanceData[key].conversions, performanceData[key].conversions_value, performanceData[key].price, performanceData[key].benchmark, performanceData[key].availability]);
-            } else {
-                if ("availability" in performanceData[key]) {
-                    combinedData.push([segmentDate, productItemID, productTitle, performanceData[key].impressions, performanceData[key].clicks, performanceData[key].cost, performanceData[key].conversions, performanceData[key].conversions_value, "", "", performanceData[key].availability]);
-                } else {
-                    combinedData.push([segmentDate, productItemID, productTitle, performanceData[key].impressions, performanceData[key].clicks, performanceData[key].cost, performanceData[key].conversions, performanceData[key].conversions_value, "", "", ""]);
-                }
-            }
-        }
-    }
-
-    var filteredData = [dataHeaders];
-    if (earliestDate != "first") {
-        earliestDate.setDate(earliestDate.getDate() - 1);
-    }
-
-    for (var combinedDataIndex = 1; combinedDataIndex < combinedData.length; combinedDataIndex++) {
-        var combinedDataRow = combinedData[combinedDataIndex];
-        if (typeof combinedDataRow[0] === "string" || combinedDataRow[0] instanceof String) {
-            var dateParts = combinedDataRow[0].split("-");
-            var previousDate = new Date(dateParts[0], parseInt(parseFloat(dateParts[1]) - 1), dateParts[2]);
-            previousDate.setDate(previousDate.getDate() - 1);
-            previousDate.setHours(16, 0, 0);
-        } else {
-            previousDate = combinedDataRow[0];
-        }
-    
-        if (earliestDate == "first") {
-            if (combinedDataRow[10] != "") {
-                filteredData.push(combinedDataRow);
-            }
-        } else {
-            if (previousDate >= earliestDate) {
-                filteredData.push(combinedDataRow);
-            }
-        }
-    }
-
-    var dedupedData = dedupeData(filteredData);
-    sheetToUse.getRange("A1:K").clearContent();
-    sheetToUse.getRange("A1:K" + dedupedData.length.toString()).setValues(dedupedData);
-    sheetToUse.getRange("A2:K" + dedupedData.length.toString()).sort(10);
-}
-
-function getPerformanceData(lookBackPeriod) {
-    var performanceStartDate = new Date;
-    performanceStartDate.setDate(performanceStartDate.getDate() - lookBackPeriod);
-    if (String(performanceStartDate.getMonth() + 1).length < 2) {
-        var formattedPerformanceStartMonth = "0" + String(performanceStartDate.getMonth() + 1);
-    } else {
-        var formattedPerformanceStartMonth = String(performanceStartDate.getMonth() + 1);
-    }
-
-    if (String(performanceStartDate.getDate()).length < 2) {
-        var formattedPerformanceStartDay = "0" + String(performanceStartDate.getDate());
-    } else {
-        var formattedPerformanceStartDay = String(performanceStartDate.getDate());
-    }
-
-    var formattedPerformanceStartDate = performanceStartDate.getFullYear() + "-" + formattedPerformanceStartMonth + "-" + formattedPerformanceStartDay;
-    var performanceEndDate = new Date;
-    performanceEndDate.setDate(performanceEndDate.getDate() - 1);
-    if (String(performanceEndDate.getMonth() + 1).length < 2) {
-        var formattedPerformanceStartMonth = "0" + String(performanceEndDate.getMonth() + 1);
-    } else {
-        var formattedPerformanceStartMonth = String(performanceEndDate.getMonth() + 1);
-    }
-
-    if (String(performanceEndDate.getDate()).length < 2) {
-        var formattedPerformanceStartDay = "0" + String(performanceEndDate.getDate());
-    } else {
-        var formattedPerformanceStartDay = String(performanceEndDate.getDate());
-    }
-
-    var formattedPerformanceEndDate = performanceEndDate.getFullYear() + "-" + formattedPerformanceStartMonth + "-" + formattedPerformanceStartDay;
-    var performanceDataQuery = "SELECT  segments.date, campaign.name,  segments.product_title,  segments.product_item_id, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value  FROM shopping_performance_view   WHERE segments.date BETWEEN '" + formattedPerformanceStartDate + "' AND '" + formattedPerformanceEndDate + "' ORDER BY campaign.name";
-    let performanceDataObj = {};
-    var report = AdsApp.report(performanceDataQuery);
-    var rowsIterator = report.rows();
-    while (rowsIterator.hasNext()) {
-        var row = rowsIterator.next();
-        var compositeKey = row["segments.product_title"] + "@--@" + row["segments.date"] + "@--@" + row["segments.product_item_id"].toLowerCase();
-        if (compositeKey in performanceDataObj) {
-            if ("impressions" in performanceDataObj[compositeKey]) {
-                performanceDataObj[compositeKey].impressions = parseFloat(performanceDataObj[compositeKey].impressions) + parseFloat(row["metrics.impressions"]);
-                performanceDataObj[compositeKey].clicks = parseFloat(performanceDataObj[compositeKey].clicks) + parseFloat(row["metrics.clicks"]);
-                performanceDataObj[compositeKey].cost = parseFloat(performanceDataObj[compositeKey].cost) + parseFloat(row["metrics.cost_micros"]) * 0.000001;
-                performanceDataObj[compositeKey].conversions = parseFloat(performanceDataObj[compositeKey].conversions) + parseFloat(row["metrics.conversions"]);
-                performanceDataObj[compositeKey].conversions_value = parseFloat(performanceDataObj[compositeKey].conversions_value) + parseFloat(row["metrics.conversions_value"]);
-            } else {
-                performanceDataObj[compositeKey].impressions = parseFloat(row["metrics.impressions"]);
-                performanceDataObj[compositeKey].clicks = parseFloat(row["metrics.clicks"]);
-                performanceDataObj[compositeKey].cost = parseFloat(row["metrics.cost_micros"]) * 0.000001;
-                performanceDataObj[compositeKey].conversions = parseFloat(performanceDataObj[compositeKey].conversions) + parseFloat(row["metrics.conversions"]);
-                performanceDataObj[compositeKey].conversions_value = parseFloat(row["metrics.conversions_value"]);
-            }
-        } else {
-            performanceDataObj[compositeKey] = {};
-            performanceDataObj[compositeKey].impressions = parseFloat(row["metrics.impressions"]);
-            performanceDataObj[compositeKey].clicks = parseFloat(row["metrics.clicks"]);
-            performanceDataObj[compositeKey].cost = parseFloat(row["metrics.cost_micros"]) * 0.000001;
-            performanceDataObj[compositeKey].conversions = parseFloat(row["metrics.conversions"]);
-            performanceDataObj[compositeKey].conversions_value = parseFloat(row["metrics.conversions_value"]);
-        }
-    }
-    return performanceDataObj;
-}
-
-function priceCompData(outputDictionary, merchantId) {
-    var returnDict = outputDictionary;
+function getBenchmarkPrices(productIds) {
+    var priceData = [];
     var pageToken;
     var keepLooping = true;
     while (keepLooping) {
         var maxResults = 1e3;
-        var queryString = "SELECT product_view.id, product_view.title, product_view.brand,product_view.price_micros, product_view.currency_code,price_competitiveness.country_code,price_competitiveness.benchmark_price_micros,price_competitiveness.benchmark_price_currency_code FROM PriceCompetitivenessProductView";
+        var queryString = "SELECT product_view.id,price_competitiveness.benchmark_price_micros,price_competitiveness.country_code FROM PriceCompetitivenessProductView";
         var resource = { query: queryString, pageSize: maxResults, pageToken: pageToken };
-        var productStatuses = ShoppingContent.Reports.search(resource, merchantId);
-        for (var i = 1; i < productStatuses.results.length; i++) {
-            var productMC = productStatuses.results[i];
-            var currentdate = new Date;
-            var currentdateFormat = currentdate.getFullYear() + "-" + (currentdate.getMonth() + 1) + "-" + currentdate.getDate();
-            var key = productMC.productView.title + "@--@" + currentdateFormat + "@--@" + productMC.productView.id.toLowerCase().split(":")[productMC.productView.id.toLowerCase().split(":").length - 1];
-            if (key in returnDict) {
-                returnDict[key].price = productMC.productView.priceMicros * 0.000001;
-                returnDict[key].benchmark = productMC.priceCompetitiveness.benchmarkPriceMicros * 0.000001;
-            } else {
-                returnDict[key] = {};
-                returnDict[key].price = productMC.productView.priceMicros * 0.000001;
-                returnDict[key].benchmark = productMC.priceCompetitiveness.benchmarkPriceMicros * 0.000001;
+        var priceReports = ShoppingContent.Reports.search(resource, config.merchantId);
+        for (var i = 1; i < priceReports.results.length; i++) {
+            var priceReport = priceReports.results[i];
+            var productID = priceReport.productView.id.split(":").pop();
+            if (productIds.includes(productID)) {
+                var benchmarkPrice = priceReport.priceCompetitiveness.benchmarkPriceMicros * 0.000001;
+                priceData.push([productID, benchmarkPrice]);
             }
         }
-        if (productStatuses.nextPageToken == null) {
+        if (priceReports.nextPageToken == null) {
             keepLooping = false;
         } else {
-            pageToken = productStatuses.nextPageToken;
+            pageToken = priceReports.nextPageToken;
         }
     }
-    return returnDict;
+    return priceData;
 }
 
-function statusData(outputDictionary, merchantId) {
-    var returnDict = outputDictionary
-    var pageToken;
-    var keepLooping = true
-    while (keepLooping) {
-        var maxResults = 1000;
-        var queryString = 'SELECT product_view.id, product_view.title, product_view.availability FROM ProductView'
-        var resource = {
-            "query": queryString,
-            "pageSize": maxResults,
-            "pageToken": pageToken
+function getFilteredShoppingProducts(daysAgo) {
+    var today = new Date();
+    today.setDate(today.getDate() - config.conversionLag);
+    var daysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo);
+    var dateFrom = Utilities.formatDate(daysAgo, AdWordsApp.currentAccount().getTimeZone(), 'yyyyMMdd');
+    var dateTo = Utilities.formatDate(today, AdWordsApp.currentAccount().getTimeZone(), 'yyyyMMdd');
+
+    var query =
+        "SELECT CampaignName, OfferId, Impressions, Clicks, Ctr, Cost, Conversions, ConversionValue " +
+        "FROM SHOPPING_PERFORMANCE_REPORT " +
+        "DURING " + dateFrom + "," + dateTo;
+
+    var products = [];
+    var count = 0;
+    var productTypeCounts = {
+        'below-benchmark-price': 0,
+        'at-benchmark-price': 0,
+        'above-benchmark-price': 0
+    };
+
+    var report = AdWordsApp.report(query);
+    var rows = report.rows();
+    var aggregatedProducts = {};
+
+    while (rows.hasNext()) {
+        var row = rows.next();
+        var offer_id = row['OfferId'];
+        var impressions = parseInt(row['Impressions']);
+        var clicks = parseInt(row['Clicks']);
+        var cost = parseFloat(row['Cost'].replace(",", ""));
+        var conversions = parseInt(row['Conversions']);
+        var conversionValue = parseFloat(row['ConversionValue'].replace(",", ""));
+
+        if (!aggregatedProducts.hasOwnProperty(offer_id)) {
+            aggregatedProducts[offer_id] = {
+                impressions: 0,
+                clicks: 0,
+                cost: 0,
+                conversions: 0,
+                conversionValue: 0
+            };
         }
-        var productStatuses = ShoppingContent.Reports.search(resource, merchantId)
-        for (var i = 1; i < productStatuses['results'].length; i++) {
-            var productMC = productStatuses['results'][i]
-            var currentdate = new Date();
-            var currentdateFormat = currentdate.getFullYear() + "-" + (currentdate.getMonth() + 1) + "-" + currentdate.getDate()
-            var key = productMC['productView']['title'] + '@--@' + currentdateFormat + '@--@' + productMC['productView']['id'].toLowerCase().split(":")[productMC['productView']['id'].toLowerCase().split(":").length - 1]
-            if (key in returnDict) {
-                if (productMC['productView']['availability'] == 'IN_STOCK') {
-                    returnDict[key]['availability'] = 1
-                } else {
-                    returnDict[key]['availability'] = 0
-                }
-            } else {
-                returnDict[key] = {}
-                if (productMC['productView']['availability'] == 'IN_STOCK') {
-                    returnDict[key]['availability'] = 1
-                } else {
-                    returnDict[key]['availability'] = 0
-                }
-            }
-        }
-        if (productStatuses['nextPageToken'] == null) {
-            keepLooping = false
-        } else {
-            pageToken = productStatuses['nextPageToken']
-        }
+
+        aggregatedProducts[offer_id].impressions += impressions;
+        aggregatedProducts[offer_id].clicks += clicks;
+        aggregatedProducts[offer_id].cost += cost;
+        aggregatedProducts[offer_id].conversions += conversions;
+        aggregatedProducts[offer_id].conversionValue += conversionValue;
     }
-    return returnDict
-}
 
-function dedupeData(data) {
-    var uniques = [];
-    var itemsFound = {};
-    for (var i = 0; i < data.length; i++) {
-        var key = ""
-        for (var j = 0; j < data[i].length; j++) {
-            key = key + data[i][j]
-        }
-        if (!(key in itemsFound)) {
-            itemsFound[key] = "Yes"
-            uniques.push(data[i])
-        }
+    var totalConversions = 0;
+    var totalClicks = 0;
+
+    var report = AdWordsApp.report(query);
+    var rows = report.rows();
+
+    while (rows.hasNext()) {
+        var row = rows.next();
+        totalConversions += parseInt(row['Conversions']);
+        totalClicks += parseInt(row['Clicks']);
     }
-    return uniques
+
+    var averageConversionRate = totalConversions / totalClicks * 100;
+
+    for (var offer_id in aggregatedProducts) {
+        var productData = aggregatedProducts[offer_id];
+        var convValuePerCost = productData.conversionValue / productData.cost;
+        if (isNaN(convValuePerCost) || !isFinite(convValuePerCost)) {
+            convValuePerCost = 0;
+        }
+        var convPerCost = productData.cost / productData.conversions;
+        if (isNaN(convPerCost) || !isFinite(convPerCost)) {
+            convPerCost = 0;
+        }
+
+        var isProductType = '';
+        
+        // add product bucketing based on benchmark price
+
+        productTypeCounts[isProductType]++;
+        products.push([
+            offer_id,
+            productData.impressions.toString(),
+            productData.clicks.toString(),
+            productData.cost.toString(),
+            productData.conversions.toString(),
+            productData.conversionValue,
+            convValuePerCost,
+            convPerCost,
+            isProductType,
+        ]);
+        count += 1;
+    }
+
+    Logger.log('Total products: ' + count);
+
+    for (var productType in productTypeCounts) {
+        Logger.log(productType + ': ' + productTypeCounts[productType]);
+    }
+
+    return products;
 }
 
-function onlyUnique(value, index, array) {
-    return array.indexOf(value) === index;
+function initializeOverTimeSheet() {
+    var spreadsheet = SpreadsheetApp.openByUrl(config.SPREADSHEET_URL);
+    var sheet = spreadsheet.getSheetByName('overTime');
+    var lastRow = sheet.getLastRow();
+
+    if (lastRow === 0) {
+        sheet.appendRow([
+            'Date', 'above-benchmark-price Products', 'at-benchmark-price Products', 'below-benchmark-price Products',
+            'above-benchmark-price Impressions', 'above-benchmark-price Clicks', 'above-benchmark-price Costs', 'above-benchmark-price Conversion Value', 'above-benchmark-price Conv Value/Cost',
+            'at-benchmark-price Impressions', 'at-benchmark-price Clicks', 'at-benchmark-price Costs', 'at-benchmark-price Conversion Value', 'at-benchmark-price Conv Value/Cost',
+            'below-benchmark-price Impressions', 'below-benchmark-price Clicks', 'below-benchmark-price Costs', 'below-benchmark-price Conversion Value', 'below-benchmark-price Conv Value/Cost'
+        ]);
+    }
+}
+
+function pushToSpreadsheet(data) {
+    var spreadsheet = SpreadsheetApp.openByUrl(config.SPREADSHEET_URL);
+    var sheet = spreadsheet.getSheetByName('customLabel');
+    var lastRow = sheet.getMaxRows();
+    sheet.getRange('A2:I' + lastRow).clearContent();
+    var start_row = 2;
+    var endRow = start_row + data.length - 1;
+    var range = sheet.getRange('A' + start_row + ':' + 'I' + endRow);
+    if (data.length > 0) {
+        range.setValues(data);
+    }
+    return;
+}
+
+function pushToSpreadsheetMerchant(data) {
+    var spreadsheet = SpreadsheetApp.openByUrl(config.SPREADSHEET_URL);
+    var sheet = spreadsheet.getSheetByName('merchantData');
+    
+    // Clear the content from row 2
+    sheet.getRange('A2:B' + sheet.getMaxRows()).clearContent();
+    
+    if (data.length > 0) {
+        // Get the range from A2 to the end of your data array
+        var range = sheet.getRange(2, 1, data.length, 2);
+        
+        // Set the values for this range
+        range.setValues(data);
+    }
+}
+
+function updateSheetWithDailyData(products) {
+    var buckets = ['above-benchmark-price', 'at-benchmark-price', 'below-benchmark-price'];
+    var spreadsheet = SpreadsheetApp.openByUrl(config.SPREADSHEET_URL);
+    var sheet = spreadsheet.getSheetByName('overTime');
+    var today = new Date();
+    today.setDate(today.getDate() - config.conversionLag);
+    var lastRow = sheet.getLastRow();
+    var lastDate = sheet.getRange(lastRow, 1).getValue();
+    var newDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    if (lastDate.toString() === newDate.toString()) {
+        Logger.log("The script has already run for today. Skipping update.");
+        return;
+    }
+
+    var productTypeCounts = {
+        'below-benchmark-price': 0,
+        'at-benchmark-price': 0,
+        'above-benchmark-price': 0
+    };
+
+    var kpiTotals = {
+        'below-benchmark-price': { impressions: 0, clicks: 0, costs: 0, conversionValue: 0, convValuePerCost: 0 },
+        'at-benchmark-price': { impressions: 0, clicks: 0, costs: 0, conversionValue: 0, convValuePerCost: 0 },
+        'above-benchmark-price': { impressions: 0, clicks: 0, costs: 0, conversionValue: 0, convValuePerCost: 0 }
+    };
+
+    for (var i = 0; i < products.length; i++) {
+        var productType = products[i][8];
+        productTypeCounts[productType]++;
+
+        kpiTotals[productType].impressions += parseFloat(products[i][1]);
+        kpiTotals[productType].clicks += parseFloat(products[i][2]);
+        kpiTotals[productType].costs += parseFloat(products[i][3]);
+        kpiTotals[productType].conversionValue += parseFloat(products[i][5]);
+        kpiTotals[productType].convValuePerCost += parseFloat(products[i][6]);
+    }
+
+    var newRow = lastRow + 1;
+    sheet.getRange(newRow, 1).setValue(newDate);
+    sheet.getRange(newRow, 2).setValue(productTypeCounts['below-benchmark-price']);
+    sheet.getRange(newRow, 3).setValue(productTypeCounts['at-benchmark-price']);
+    sheet.getRange(newRow, 4).setValue(productTypeCounts['above-benchmark-price']);
+
+    for (var i = 0; i < buckets.length; i++) {
+        var bucket = buckets[i];
+        sheet.getRange(newRow, 7 + i * 5).setValue(kpiTotals[bucket].impressions);
+        sheet.getRange(newRow, 8 + i * 5).setValue(kpiTotals[bucket].clicks);
+        sheet.getRange(newRow, 9 + i * 5).setValue(kpiTotals[bucket].costs);
+
+        var conversionValue = parseFloat(kpiTotals[bucket].conversionValue);
+        sheet.getRange(newRow, 10 + i * 5).setValue(conversionValue);
+
+        var costs = parseFloat(kpiTotals[bucket].costs);
+        var convValuePerCost = conversionValue / costs;
+        if (isNaN(convValuePerCost) || !isFinite(convValuePerCost)) {
+            convValuePerCost = 0;
+        }
+        sheet.getRange(newRow, 11 + i * 5).setValue(convValuePerCost);
+    }
+
+    Logger.log("Daily data updated successfully.");
 }
