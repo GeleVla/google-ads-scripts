@@ -45,7 +45,7 @@ function main() {
     var benchmarkData = getBenchmarkPrices(productIds);
     pushToSpreadsheetMerchant(benchmarkData);
 
-    var products = getFilteredShoppingProducts(config.daysAgo);
+    var products = getFilteredShoppingProducts(benchmarkData, config.daysAgo);
     products.sort(function (a, b) {
         return a[0] > b[0];
     });
@@ -78,7 +78,7 @@ function getBenchmarkPrices(productIds) {
     var keepLooping = true;
     while (keepLooping) {
         var maxResults = 1e3;
-        var queryString = "SELECT product_view.id,price_competitiveness.benchmark_price_micros,price_competitiveness.country_code FROM PriceCompetitivenessProductView";
+        var queryString = "SELECT product_view.id, product_view.price_micros, price_competitiveness.benchmark_price_micros, price_competitiveness.country_code FROM PriceCompetitivenessProductView";
         var resource = { query: queryString, pageSize: maxResults, pageToken: pageToken };
         var priceReports = ShoppingContent.Reports.search(resource, config.merchantId);
         for (var i = 1; i < priceReports.results.length; i++) {
@@ -86,7 +86,8 @@ function getBenchmarkPrices(productIds) {
             var productID = priceReport.productView.id.split(":").pop();
             if (productIds.includes(productID)) {
                 var benchmarkPrice = priceReport.priceCompetitiveness.benchmarkPriceMicros * 0.000001;
-                priceData.push([productID, benchmarkPrice]);
+                var productPrice = priceReport.productView.priceMicros * 0.000001; // Fetching product's actual price
+                priceData.push([productID, benchmarkPrice, productPrice]);
             }
         }
         if (priceReports.nextPageToken == null) {
@@ -98,7 +99,8 @@ function getBenchmarkPrices(productIds) {
     return priceData;
 }
 
-function getFilteredShoppingProducts(daysAgo) {
+
+function getFilteredShoppingProducts(benchmarkData, daysAgo) {
     var today = new Date();
     today.setDate(today.getDate() - config.conversionLag);
     var daysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo);
@@ -160,8 +162,6 @@ function getFilteredShoppingProducts(daysAgo) {
         totalClicks += parseInt(row['Clicks']);
     }
 
-    var averageConversionRate = totalConversions / totalClicks * 100;
-
     for (var offer_id in aggregatedProducts) {
         var productData = aggregatedProducts[offer_id];
         var convValuePerCost = productData.conversionValue / productData.cost;
@@ -173,9 +173,29 @@ function getFilteredShoppingProducts(daysAgo) {
             convPerCost = 0;
         }
 
-        var isProductType = '';
-        
+        var benchmarkPrice;
+        var productPrice;
+        for (var i = 0; i < benchmarkData.length; i++) {
+            if (benchmarkData[i][0].toLowerCase() == offer_id) {
+                benchmarkPrice = benchmarkData[i][1];
+                productPrice = benchmarkData[i][2];
+                break;
+            }
+        }
+
+        var isProductType = '';    
+        if (benchmarkPrice > productPrice) {
+            isProductType = 'below-benchmark-price';
+        } else if (benchmarkPrice < productPrice) {
+            isProductType = 'above-benchmark-price';
+        } else if (true) { // built variable
+            isProductType = 'at-benchmark-price';
+        } else {
+            isProductType = 'no-benchmark-price';
+        }
+
         // add product bucketing based on benchmark price
+        // build a percentage difference value that's veriable
 
         productTypeCounts[isProductType]++;
         products.push([
@@ -191,13 +211,10 @@ function getFilteredShoppingProducts(daysAgo) {
         ]);
         count += 1;
     }
-
     Logger.log('Total products: ' + count);
-
     for (var productType in productTypeCounts) {
         Logger.log(productType + ': ' + productTypeCounts[productType]);
     }
-
     return products;
 }
 
@@ -233,18 +250,13 @@ function pushToSpreadsheet(data) {
 function pushToSpreadsheetMerchant(data) {
     var spreadsheet = SpreadsheetApp.openByUrl(config.SPREADSHEET_URL);
     var sheet = spreadsheet.getSheetByName('merchantData');
-    
-    // Clear the content from row 2
-    sheet.getRange('A2:B' + sheet.getMaxRows()).clearContent();
-    
+    sheet.getRange('A2:C' + sheet.getMaxRows()).clearContent();
     if (data.length > 0) {
-        // Get the range from A2 to the end of your data array
-        var range = sheet.getRange(2, 1, data.length, 2);
-        
-        // Set the values for this range
+        var range = sheet.getRange(2, 1, data.length, 3); // Changed from 2 to 3
         range.setValues(data);
     }
 }
+
 
 function updateSheetWithDailyData(products) {
     var buckets = ['above-benchmark-price', 'at-benchmark-price', 'below-benchmark-price'];
@@ -306,6 +318,5 @@ function updateSheetWithDailyData(products) {
         }
         sheet.getRange(newRow, 11 + i * 5).setValue(convValuePerCost);
     }
-
     Logger.log("Daily data updated successfully.");
 }
