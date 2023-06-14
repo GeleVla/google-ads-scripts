@@ -175,23 +175,25 @@ function getFilteredShoppingProducts(benchmarkData, daysAgo) {
 
         var benchmarkPrice;
         var productPrice;
+        var isProductType = '';
         for (var i = 0; i < benchmarkData.length; i++) {
             if (benchmarkData[i][0].toLowerCase() == offer_id) {
                 benchmarkPrice = benchmarkData[i][1];
                 productPrice = benchmarkData[i][2];
                 break;
+            } else {
+                benchmarkPrice = undefined;
             }
         }
-
-        var isProductType = '';    
-        if (benchmarkPrice > productPrice) {
+        
+        if (benchmarkPrice === undefined || benchmarkPrice === null) {
+            isProductType = 'no-benchmark-price';
+        } else if (benchmarkPrice > productPrice) {
             isProductType = 'below-benchmark-price';
         } else if (benchmarkPrice < productPrice) {
             isProductType = 'above-benchmark-price';
         } else if (true) { // built variable
             isProductType = 'at-benchmark-price';
-        } else {
-            isProductType = 'no-benchmark-price';
         }
 
         // add product bucketing based on benchmark price
